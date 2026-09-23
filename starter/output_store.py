@@ -1,13 +1,13 @@
 """Publish an immutable output generation with one atomic namespace change."""
 
-from contextlib import contextmanager
 import ctypes
 import errno
 import os
-from pathlib import Path
 import shutil
 import sys
 import tempfile
+from contextlib import contextmanager
+from pathlib import Path
 from uuid import uuid4
 
 
@@ -25,30 +25,52 @@ def exchange_paths(left, right):
         status = call(os.fsencode(left), os.fsencode(right), 0x00000002)  # RENAME_SWAP
     elif sys.platform.startswith("linux") and hasattr(libc, "renameat2"):
         call = libc.renameat2
-        call.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+        call.argtypes = [
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
         call.restype = ctypes.c_int
-        status = call(-100, os.fsencode(left), -100, os.fsencode(right), 2)  # AT_FDCWD, RENAME_EXCHANGE
+        status = call(
+            -100, os.fsencode(left), -100, os.fsencode(right), 2
+        )  # AT_FDCWD, RENAME_EXCHANGE
     else:
-        raise OSError(errno.ENOTSUP, "Атомарная замена старой папки не поддерживается; укажите новый --out")
+        raise OSError(
+            errno.ENOTSUP, "Атомарная замена старой папки не поддерживается; укажите новый --out"
+        )
     if status != 0:
         code = ctypes.get_errno()
         raise OSError(code, "Не удалось атомарно переключить результат: " + os.strerror(code))
 
 
 @contextmanager
-def staged_output(out_dir):
+def staged_output(out_dir, validate_existing=None):
     """Yield a private directory, publish only when its writer returns normally.
 
     Previous generations are retained. No destructive fallback is allowed if
     the filesystem cannot atomically exchange a legacy directory and a symlink.
     """
     # Resolve the parent only: resolving out_dir would follow the live pointer.
-    requested = Path(os.path.abspath(out_dir))
+    requested = Path(out_dir)
+    if not requested.is_absolute():
+        requested = Path.cwd() / requested
+    # Resolve the raw parent before collapsing "..": link/../out must follow
+    # the filesystem meaning of link rather than its lexical parent.
+    if requested.name in ("", ".."):
+        requested = requested.resolve()
     parent = requested.parent.resolve()
     target = parent / requested.name
+    if target.is_symlink() and not target.exists():
+        raise OSError(errno.ENOENT, f"Ссылка результата не существует: {target}")
+    if target.exists():
+        if not target.is_dir():
+            raise OSError(errno.ENOTDIR, f"Путь результата не является папкой: {target}")
+        if validate_existing is None:
+            raise ValueError("Existing output must be a verified result directory")
+        validate_existing(target)
     parent.mkdir(parents=True, exist_ok=True)
-    if target.exists() and not target.is_dir():
-        raise OSError(errno.ENOTDIR, f"Путь результата не является папкой: {target}")
     version = Path(tempfile.mkdtemp(prefix=f".{target.name}-version-", dir=parent))
     pointer = parent / f".{target.name}-previous-{uuid4().hex}"
     try:

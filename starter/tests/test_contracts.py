@@ -9,36 +9,67 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 
-from starter import (basic_features, betweenness_features, build_graph,
-                     write_graph_json, write_outputs, write_templates)
-from validation import ValidationError, validate_inputs, validate_outputs, validate_output_files
+from starter import (
+    basic_features,
+    betweenness_features,
+    build_graph,
+    write_graph_json,
+    write_outputs,
+    write_templates,
+)
+from validation import ValidationError, validate_inputs, validate_output_files, validate_outputs
 
 
 def input_fixture():
     gids = [100000003684369100 + i for i in range(3)]
     nodes = pd.DataFrame({"gid": gids, "depth": [0, 1, 0], "is_seed": [True, False, True]})
-    edges = pd.DataFrame({"src": [gids[0]], "dst": [gids[1]], "sum_kzt": [10000000.03],
-                          "n_tx": [2], "depth": [1]})
-    tx = pd.DataFrame({"src": [gids[0]] * 2, "dst": [gids[1]] * 2,
-                       "date": pd.to_datetime(["2026-07-01", "2026-07-02"]),
-                       "sum_kzt": [10000000.01, .02]})
+    edges = pd.DataFrame(
+        {"src": [gids[0]], "dst": [gids[1]], "sum_kzt": [10000000.03], "n_tx": [2], "depth": [1]}
+    )
+    tx = pd.DataFrame(
+        {
+            "src": [gids[0]] * 2,
+            "dst": [gids[1]] * 2,
+            "date": pd.to_datetime(["2026-07-01", "2026-07-02"]),
+            "sum_kzt": [10000000.01, 0.02],
+        }
+    )
     return edges, nodes, tx
 
 
 def output_fixture():
     gids = [100000003684369100 + i for i in range(21)]
-    nodes = pd.DataFrame({"gid": gids, "depth": [0] + [1] * 20,
-                          "is_seed": [True] + [False] * 20})
+    nodes = pd.DataFrame({"gid": gids, "depth": [0] + [1] * 20, "is_seed": [True] + [False] * 20})
     # Two directions in one cluster: both amounts must contribute to internal turnover.
-    edges = pd.DataFrame({"src": [gids[0], gids[1]], "dst": [gids[1], gids[0]],
-                          "sum_kzt": [10.01, 20.02]})
-    roles = pd.DataFrame({"gid": gids, "role": ["peripheral"] * 21,
-                          "role_score": [.5] * 21, "cluster_id": [0] * 21,
-                          "priority_score": [1 - i / 25 for i in range(21)],
-                          "evidence": ["in_deg=1; fixture only"] * 21})
-    clusters = pd.DataFrame({"cluster_id": [0], "n_nodes": [21], "n_seed": [1],
-                             "sum_kzt_internal": [30.03],
-                             "top_gids": [json.dumps([str(gids[0])])], "hypothesis": ["Test fixture"]})
+    edges = pd.DataFrame(
+        {
+            "src": [gids[0], gids[1]],
+            "dst": [gids[1], gids[0]],
+            "sum_kzt": [10.01, 20.02],
+            "n_tx": [1, 1],
+            "depth": [1, 2],
+        }
+    )
+    roles = pd.DataFrame(
+        {
+            "gid": gids,
+            "role": ["peripheral"] * 21,
+            "role_score": [0.5] * 21,
+            "cluster_id": [0] * 21,
+            "priority_score": [1 - i / 25 for i in range(21)],
+            "evidence": ["in_deg=1; fixture only"] * 21,
+        }
+    )
+    clusters = pd.DataFrame(
+        {
+            "cluster_id": [0],
+            "n_nodes": [21],
+            "n_seed": [1],
+            "sum_kzt_internal": [30.03],
+            "top_gids": [json.dumps([str(gids[0])])],
+            "hypothesis": ["Test fixture"],
+        }
+    )
     top = roles.head(20)[["gid", "role", "priority_score"]].copy()
     top.insert(0, "rank", range(1, 21))
     top["why"] = "in_deg=1; fixture only"
@@ -77,11 +108,14 @@ class InputTests(unittest.TestCase):
     def test_duplicate_edges_and_nodes(self):
         e, n, t = input_fixture()
         for edges, nodes in ((pd.concat([e, e]), n), (e, pd.concat([n, n.iloc[:1]]))):
-            with self.subTest(edges=len(edges), nodes=len(nodes)), self.assertRaisesRegex(ValidationError, "duplicate"):
+            with (
+                self.subTest(edges=len(edges), nodes=len(nodes)),
+                self.assertRaisesRegex(ValidationError, "duplicate"),
+            ):
                 validate_inputs(edges, nodes, t)
 
     def test_bad_numeric_values(self):
-        for bad in [np.nan, np.inf, -1., 0., 1.001]:
+        for bad in [np.nan, np.inf, -1.0, 0.0, 1.001]:
             e, n, t = input_fixture()
             t.loc[0, "sum_kzt"] = bad
             with self.subTest(bad=bad), self.assertRaises(ValidationError):
@@ -118,11 +152,12 @@ class GraphTests(unittest.TestCase):
         g = build_graph(e, n)
         f = basic_features(g, n)
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "graph.json"
+            path = Path(tmp) / "nested" / "graph.json"
             write_graph_json(g, f, path)
             raw = path.read_text()
             data = json.loads(raw)
         self.assertNotIn("NaN", raw)
+        self.assertEqual(data["analysis_status"], "features_only")
         self.assertEqual({row["gid"] for row in data["nodes"]}, {str(v) for v in n.gid})
         self.assertTrue(all(isinstance(row["gid"], str) for row in data["nodes"]))
         for row in data["edges"]:
@@ -132,9 +167,9 @@ class GraphTests(unittest.TestCase):
 
     def test_distance_semantics(self):
         g = nx.DiGraph()
-        g.add_edge("a", "b", sum_kzt=100.)
-        g.add_edge("b", "c", sum_kzt=100.)
-        g.add_edge("a", "c", sum_kzt=1.)
+        g.add_edge("a", "b", sum_kzt=100.0)
+        g.add_edge("b", "c", sum_kzt=100.0)
+        g.add_edge("a", "c", sum_kzt=1.0)
         self.assertEqual(betweenness_features(g, "hops")["b"], 0)
         self.assertGreater(betweenness_features(g, "inverse_amount")["b"], 0)
         self.assertNotIn("distance", g["a"]["b"])
@@ -163,22 +198,37 @@ class OutputTests(unittest.TestCase):
     def test_node_coverage_and_uniqueness(self):
         r, c, t, n, e = output_fixture()
         for bad in [r.iloc[:-1], pd.concat([r, r.iloc[:1]])]:
-            with self.subTest(size=len(bad)), self.assertRaisesRegex(ValidationError, "every input"):
+            with (
+                self.subTest(size=len(bad)),
+                self.assertRaisesRegex(ValidationError, "every input"),
+            ):
                 validate_outputs(bad, c, t, n, e)
 
     def test_invalid_roles_scores_and_evidence(self):
-        for col, value in [("role", "unknown"), ("role_score", -1.), ("role_score", np.inf),
-                           ("priority_score", 1.01), ("evidence", ""), ("evidence", "high score"),
-                           ("evidence", "1" * 201)]:
+        for col, value in [
+            ("role", "unknown"),
+            ("role_score", -1.0),
+            ("role_score", np.inf),
+            ("priority_score", 1.01),
+            ("evidence", ""),
+            ("evidence", "high score"),
+            ("evidence", "1" * 201),
+        ]:
             r, c, t, n, e = output_fixture()
             r.loc[0, col] = value
             with self.subTest(col=col, value=value), self.assertRaises(ValidationError):
                 validate_outputs(r, c, t, n, e)
 
     def test_cluster_membership_statistics_and_top_ids(self):
-        for col, value in [("cluster_id", 7), ("n_nodes", 20), ("n_seed", 0),
-                           ("sum_kzt_internal", 30.04), ("top_gids", '["999"]'),
-                           ("top_gids", '[100000003684369100]'), ("hypothesis", " ")]:
+        for col, value in [
+            ("cluster_id", 7),
+            ("n_nodes", 20),
+            ("n_seed", 0),
+            ("sum_kzt_internal", 30.04),
+            ("top_gids", '["999"]'),
+            ("top_gids", "[100000003684369100]"),
+            ("hypothesis", " "),
+        ]:
             r, c, t, n, e = output_fixture()
             c.loc[0, col] = value
             with self.subTest(col=col), self.assertRaises(ValidationError):
@@ -190,8 +240,13 @@ class OutputTests(unittest.TestCase):
             validate_outputs(r, pd.concat([c, c]), t, n, e)
 
     def test_top_count_ranks_roles_scores_and_explanations(self):
-        for col, value in [("rank", 2), ("gid", 999), ("role", "transit"),
-                           ("priority_score", .9), ("why", " ")]:
+        for col, value in [
+            ("rank", 2),
+            ("gid", 999),
+            ("role", "transit"),
+            ("priority_score", 0.9),
+            ("why", " "),
+        ]:
             r, c, t, n, e = output_fixture()
             t.loc[0, col] = value
             with self.subTest(col=col), self.assertRaises(ValidationError):
@@ -217,10 +272,10 @@ class OutputTests(unittest.TestCase):
 
     def test_tied_scores_can_have_any_order(self):
         r, c, t, n, e = output_fixture()
-        r["priority_score"] = .5
+        r["priority_score"] = 0.5
         t = t.iloc[::-1].reset_index(drop=True)
         t["rank"] = range(1, 21)
-        t["priority_score"] = .5
+        t["priority_score"] = 0.5
         validate_outputs(r, c, t, n, e)
 
     def test_invalid_submission_does_not_overwrite_existing_files(self):
