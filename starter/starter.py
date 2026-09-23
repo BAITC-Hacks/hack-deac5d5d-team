@@ -2,20 +2,24 @@
 """CLI entry point and backward-compatible library imports.
 
 Run: python starter.py --data ../data --out ./out
-See pipeline.py for orchestration and storage.py for validated publication.
+Canonical entry point from the project root: python -m hackalem.
 """
 
+import sys
 from pathlib import Path
+
+# Keep the original script usable when launched from starter/ or another directory.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import networkx as nx
 import pandas as pd
 
-from contracts import AnalysisConfig, AnalysisResult
-from features import basic_features, build_graph
-from pipeline import load
-from storage import save_result, write_graph_json
-from teaching import betweenness_features, hints, write_templates
-from validation import validate_inputs
+from hackalem.contracts import AnalysisConfig, AnalysisResult
+from hackalem.features import basic_features, build_graph
+from hackalem.pipeline import load
+from hackalem.storage import save_result, write_graph_json
+from hackalem.teaching import betweenness_features, hints, write_templates
+from hackalem.validation import validate_inputs
 
 __all__ = [
     "basic_features",
@@ -63,9 +67,9 @@ def write_outputs(
 
 
 def main() -> None:
-    from cli import main as run_cli
+    from hackalem.cli import main as run_cli
 
-    run_cli()
+    run_cli(default_data=Path("../data"))
 
 
 if __name__ == "__main__":
