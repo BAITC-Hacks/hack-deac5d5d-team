@@ -6,7 +6,8 @@
   1. грузит три parquet-файла и проверяет их консистентность;
   2. собирает направленный взвешенный граф;
   3. считает БАЗОВЫЕ метрики узлов (степени, обороты, PageRank);
-  4. пишет три выгрузки в требуемой ТЗ схеме — с ПУСТЫМИ ролями.
+  4. пишет три шаблона CSV и безопасный для браузера graph.json;
+  5. проверяет готовые выгрузки отдельной командой --validate-output.
 
 Чего он НЕ делает — это ваша работа:
   * не присваивает роли,
@@ -19,13 +20,15 @@
 """
 
 import argparse
+import json
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import networkx as nx
 
-ROLES = ["consolidator", "transit", "distributor", "terminal", "coordinator", "peripheral"]
+from validation import (ROLES, CLUSTER_COLUMNS, TOP_COLUMNS, ValidationError,
+                        validate_inputs, validate_outputs, validate_output_files)
 
 
 # ---------------------------------------------------------------- загрузка
@@ -40,6 +43,7 @@ def load(data_dir: Path):
 
 def sanity_check(edges, nodes, tx):
     """Проверки, которые стоит пройти до того, как строить модель."""
+    orphans = validate_inputs(edges, nodes, tx)
     print("=" * 64)
     print("ПРОВЕРКА ДАННЫХ")
     print("=" * 64)
@@ -47,31 +51,27 @@ def sanity_check(edges, nodes, tx):
     print(f"  рёбер                 : {len(edges):>6}")
     print(f"  транзакций            : {len(tx):>6}")
     print(f"  seed-клиентов         : {int(nodes.is_seed.sum()):>6}")
-    print(f"  оборот, KZT           : {edges.sum_kzt.sum():>14,.0f}")
-    print(f"  период                : {tx.date.min().date()} — {tx.date.max().date()}")
-
-    # транзакции должны складываться в рёбра
-    agg = tx.groupby(["src", "dst"]).agg(s=("sum_kzt", "sum"), c=("sum_kzt", "size")).reset_index()
-    m = edges.merge(agg, on=["src", "dst"], how="outer", indicator=True)
-    assert (m._merge == "both").all(), "edges и transactions не сходятся по парам"
-    print("  edges == transactions : OK")
-
-    # узлы без единого ребра
-    in_edges = set(edges.src) | set(edges.dst)
-    orphans = set(nodes.gid) - in_edges
+    print(f"  оборот, KZT           : {edges.sum_kzt.sum():>14,.2f}")
+    if not tx.empty:
+        print(f"  период                : {tx.date.min().date()} — {tx.date.max().date()}")
+    print("  edges == transactions : OK (пары, суммы до тиына, количество)")
     print(f"\n  ВНИМАНИЕ: {len(orphans)} узлов нет ни в одном ребре "
           f"(из них seed: {len(orphans & set(nodes[nodes.is_seed].gid))})")
-    print("  → они всё равно должны попасть в nodes_roles.csv")
+    print("  → все включены в граф и nodes_roles.csv")
     print("=" * 64, "\n")
     return orphans
 
 
 # ---------------------------------------------------------------- граф
 
-def build_graph(edges) -> nx.DiGraph:
+def build_graph(edges, nodes) -> nx.DiGraph:
     """Направленный граф. sum_kzt — вес ребра, n_tx — количество переводов."""
     G = nx.DiGraph()
+    for r in nodes.itertuples(index=False):
+        G.add_node(int(r.gid), depth=int(r.depth), is_seed=bool(r.is_seed))
     for r in edges.itertuples(index=False):
+        if r.src not in G or r.dst not in G:
+            raise ValidationError("edges: unknown client IDs; run sanity_check before build_graph")
         G.add_edge(r.src, r.dst, sum_kzt=float(r.sum_kzt), n_tx=int(r.n_tx), depth=int(r.depth))
     return G
 
@@ -95,7 +95,8 @@ def basic_features(G: nx.DiGraph, nodes: pd.DataFrame) -> pd.DataFrame:
     df["out_tx"] = df.gid.map(out_tx).fillna(0).astype(int)
     df["pagerank"] = df.gid.map(pr).fillna(0.0)
 
-    # доля полученного, которая ушла дальше. Около 1.0 — деньги не задерживаются.
+    # Соотношение наблюдаемых сумм, не доказательство транзита тех же денег.
+    # Внешние поступления, начальные остатки и операции вне периода неизвестны.
     df["pass_through"] = np.where(df.in_kzt > 0, df.out_kzt / df.in_kzt.replace(0, np.nan), np.nan)
 
     # ЛОВУШКА КЕЙСА: узел на 4-м колене без исходящих может быть не «стоком»,
@@ -106,7 +107,8 @@ def basic_features(G: nx.DiGraph, nodes: pd.DataFrame) -> pd.DataFrame:
 
 # ---------------------------------------------------------------- выгрузки
 
-def write_outputs(df: pd.DataFrame, out_dir: Path):
+def write_templates(df: pd.DataFrame, out_dir: Path):
+    """Учебные шаблоны. Строгую проверку готового результата НЕ проходят."""
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # 1. nodes_roles.csv — схема из ТЗ, роли не заполнены
@@ -123,15 +125,55 @@ def write_outputs(df: pd.DataFrame, out_dir: Path):
     roles.to_csv(out_dir / "nodes_roles.csv", index=False)
 
     # 2. clusters.csv — пустой каркас
-    pd.DataFrame(columns=["cluster_id", "n_nodes", "n_seed",
-                          "sum_kzt_internal", "top_gids", "hypothesis"]) \
+    pd.DataFrame(columns=CLUSTER_COLUMNS) \
         .to_csv(out_dir / "clusters.csv", index=False)
 
     # 3. top_nodes.csv — пустой каркас, нужно ≥20 строк
-    pd.DataFrame(columns=["rank", "gid", "role", "priority_score", "why"]) \
+    pd.DataFrame(columns=TOP_COLUMNS) \
         .to_csv(out_dir / "top_nodes.csv", index=False)
 
-    print(f"Выгрузки записаны в {out_dir}/  (роли пока пустые — это ваша задача)")
+    print(f"ШАБЛОНЫ записаны в {out_dir}/; это НЕ готовое решение, строгая проверка их отклонит.")
+
+
+def write_outputs(roles, clusters, top, nodes, edges, out_dir: Path):
+    """Для готовой аналитики: проверить все таблицы ДО записи, затем проверить CSV."""
+    validate_outputs(roles, clusters, top, nodes, edges)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for name, frame in (("nodes_roles", roles), ("clusters", clusters), ("top_nodes", top)):
+        frame.to_csv(out_dir / f"{name}.csv", index=False)
+    validate_output_files(out_dir, nodes, edges)
+    print(f"Готовые выгрузки проверены: {out_dir}/")
+
+
+def write_graph_json(G: nx.DiGraph, df: pd.DataFrame, path: Path):
+    """Browser boundary: all client IDs are strings; missing ratios become null."""
+    records = []
+    for row in df.itertuples(index=False):
+        record = row._asdict()
+        record["gid"] = str(row.gid)
+        records.append({key: None if pd.isna(value) else value for key, value in record.items()})
+    edges = [{"src": str(src), "dst": str(dst), **attributes}
+             for src, dst, attributes in G.edges(data=True)]
+    payload = {"schema_version": 1, "analysis_status": "features_only",
+               "nodes": records, "edges": edges}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, allow_nan=False), encoding="utf-8")
+
+
+def betweenness_features(G: nx.DiGraph, distance_mode="hops", sample_size=None, seed=42):
+    """Explicit distance choice. Amount strength is not a shortest-path length."""
+    if distance_mode == "hops":
+        graph, weight = G, None
+    elif distance_mode == "inverse_amount":
+        graph, weight = G.copy(), "distance"
+        for _, _, attrs in graph.edges(data=True):
+            amount = attrs["sum_kzt"]
+            if not np.isfinite(amount) or amount <= 0:
+                raise ValidationError("inverse_amount requires finite positive sums")
+            attrs[weight] = 1.0 / amount
+    else:
+        raise ValueError("distance_mode must be 'hops' or 'inverse_amount'")
+    return nx.betweenness_centrality(graph, k=sample_size, weight=weight, seed=seed)
 
 
 # ---------------------------------------------------------------- подсказки
@@ -155,6 +197,9 @@ def hints(G: nx.DiGraph, df: pd.DataFrame):
   Полезное в networkx: pagerank, hits, betweenness_centrality,
   community.louvain_communities, simple_cycles, all_simple_paths.
   Не забудьте: граф НАПРАВЛЕННЫЙ и ВЗВЕШЕННЫЙ.
+  Для betweenness сумма — НЕ расстояние. Используйте betweenness_features:
+  hops (по числу шагов) или inverse_amount (явная гипотеза: большой поток ближе).
+  Ни один вариант не доказывает движение тех же денег; нужны даты переводов.
 """)
 
 
@@ -162,14 +207,24 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default="../data", help="папка с parquet-файлами")
     ap.add_argument("--out", default="./out", help="куда писать выгрузки")
+    ap.add_argument("--validate-output", type=Path,
+                    help="проверить готовые CSV в папке; не создавать шаблоны")
     a = ap.parse_args()
 
-    edges, nodes, tx = load(Path(a.data))
-    sanity_check(edges, nodes, tx)
-    G = build_graph(edges)
-    df = basic_features(G, nodes)
-    write_outputs(df, Path(a.out))
-    hints(G, df)
+    try:
+        edges, nodes, tx = load(Path(a.data))
+        sanity_check(edges, nodes, tx)
+        if a.validate_output is not None:
+            validate_output_files(a.validate_output, nodes, edges)
+            print("ГОТОВЫЕ ВЫГРУЗКИ: проверка пройдена")
+            return
+        G = build_graph(edges, nodes)
+        df = basic_features(G, nodes)
+        write_templates(df, Path(a.out))
+        write_graph_json(G, df, Path(a.out) / "graph.json")
+        hints(G, df)
+    except (ValueError, OSError, KeyError, pd.errors.ParserError) as exc:
+        ap.exit(1, f"Ошибка проверки или чтения: {exc}\n")
 
 
 if __name__ == "__main__":
