@@ -177,6 +177,9 @@ def validate_outputs(roles, clusters, top, nodes, edges):
 
 def validate_output_files(out_dir: Path, nodes, edges):
     """Parse ID text exactly; reject decimal/exponent IDs before any conversion."""
+    # Pin one immutable generation before opening any files.
+    out_dir = Path(out_dir).resolve(strict=True)
+
     def read_with_ids(filename):
         frame = pd.read_csv(out_dir / filename, dtype={"gid": "string"}, float_precision="round_trip")
         require("gid" in frame, f"{filename}: missing gid column")
