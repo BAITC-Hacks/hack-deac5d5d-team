@@ -1,19 +1,15 @@
 #!/usr/bin/env python3
 """
-Стартовый код кейса «Граф денег» — HackAlem AI.
+Код кейса «Граф денег» — HackAlem AI.
 
 Что он делает:
   1. грузит три parquet-файла и проверяет их консистентность;
   2. собирает направленный взвешенный граф;
-  3. считает БАЗОВЫЕ метрики узлов (степени, обороты, PageRank);
-  4. пишет три шаблона CSV и безопасный для браузера graph.json;
+  3. считает признаки, кластеры, гипотезы ролей и приоритет проверки;
+  4. проверяет и пишет три готовых CSV и безопасный для браузера graph.json;
   5. проверяет готовые выгрузки отдельной командой --validate-output.
 
-Чего он НЕ делает — это ваша работа:
-  * не присваивает роли,
-  * не кластеризует,
-  * не ранжирует узлы,
-  * не рисует граф.
+Правила и ограничения гипотез описаны в METHODOLOGY.md.
 
 Запуск:
     python starter.py --data ../data --out ./out
@@ -22,10 +18,14 @@
 import argparse
 import json
 from pathlib import Path
+from time import perf_counter
 
 import numpy as np
 import pandas as pd
 import networkx as nx
+
+from analysis import analyze
+from output_store import staged_output
 
 from validation import (ROLES, CLUSTER_COLUMNS, TOP_COLUMNS, ValidationError,
                         validate_inputs, validate_outputs, validate_output_files)
@@ -67,9 +67,9 @@ def sanity_check(edges, nodes, tx):
 def build_graph(edges, nodes) -> nx.DiGraph:
     """Направленный граф. sum_kzt — вес ребра, n_tx — количество переводов."""
     G = nx.DiGraph()
-    for r in nodes.itertuples(index=False):
+    for r in nodes.sort_values("gid").itertuples(index=False):
         G.add_node(int(r.gid), depth=int(r.depth), is_seed=bool(r.is_seed))
-    for r in edges.itertuples(index=False):
+    for r in edges.sort_values(["src", "dst"]).itertuples(index=False):
         if r.src not in G or r.dst not in G:
             raise ValidationError("edges: unknown client IDs; run sanity_check before build_graph")
         G.add_edge(r.src, r.dst, sum_kzt=float(r.sum_kzt), n_tx=int(r.n_tx), depth=int(r.depth))
@@ -86,7 +86,7 @@ def basic_features(G: nx.DiGraph, nodes: pd.DataFrame) -> pd.DataFrame:
     out_tx = dict(G.out_degree(weight="n_tx"))
     pr = nx.pagerank(G, weight="sum_kzt")
 
-    df = nodes[["gid", "depth", "is_seed"]].copy()
+    df = nodes[["gid", "depth", "is_seed"]].sort_values("gid").reset_index(drop=True).copy()
     df["in_deg"] = df.gid.map(in_deg).fillna(0).astype(int)
     df["out_deg"] = df.gid.map(out_deg).fillna(0).astype(int)
     df["in_kzt"] = df.gid.map(in_kzt).fillna(0.0)
@@ -135,14 +135,16 @@ def write_templates(df: pd.DataFrame, out_dir: Path):
     print(f"ШАБЛОНЫ записаны в {out_dir}/; это НЕ готовое решение, строгая проверка их отклонит.")
 
 
-def write_outputs(roles, clusters, top, nodes, edges, out_dir: Path):
-    """Для готовой аналитики: проверить все таблицы ДО записи, затем проверить CSV."""
+def write_outputs(roles, clusters, top, nodes, edges, out_dir: Path, graph=None):
+    """Проверить полный комплект в отдельной версии и атомарно опубликовать."""
     validate_outputs(roles, clusters, top, nodes, edges)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    for name, frame in (("nodes_roles", roles), ("clusters", clusters), ("top_nodes", top)):
-        frame.to_csv(out_dir / f"{name}.csv", index=False)
-    validate_output_files(out_dir, nodes, edges)
-    print(f"Готовые выгрузки проверены: {out_dir}/")
+    with staged_output(out_dir) as version:
+        for name, frame in (("nodes_roles", roles), ("clusters", clusters), ("top_nodes", top)):
+            frame.to_csv(version / f"{name}.csv", index=False)
+        if graph is not None:
+            write_graph_json(graph, roles, version / "graph.json")
+        validate_output_files(version, nodes, edges)
+    print(f"Готовые выгрузки проверены и опубликованы: {out_dir}/")
 
 
 def write_graph_json(G: nx.DiGraph, df: pd.DataFrame, path: Path):
@@ -154,7 +156,8 @@ def write_graph_json(G: nx.DiGraph, df: pd.DataFrame, path: Path):
         records.append({key: None if pd.isna(value) else value for key, value in record.items()})
     edges = [{"src": str(src), "dst": str(dst), **attributes}
              for src, dst, attributes in G.edges(data=True)]
-    payload = {"schema_version": 1, "analysis_status": "features_only",
+    status = "complete" if {"role", "cluster_id", "priority_score"} <= set(df.columns) else "features_only"
+    payload = {"schema_version": 1, "analysis_status": status,
                "nodes": records, "edges": edges}
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, ensure_ascii=False, allow_nan=False), encoding="utf-8")
@@ -208,10 +211,11 @@ def main():
     ap.add_argument("--data", default="../data", help="папка с parquet-файлами")
     ap.add_argument("--out", default="./out", help="куда писать выгрузки")
     ap.add_argument("--validate-output", type=Path,
-                    help="проверить готовые CSV в папке; не создавать шаблоны")
+                    help="проверить готовые CSV в папке без пересчёта")
     a = ap.parse_args()
 
     try:
+        started = perf_counter()
         edges, nodes, tx = load(Path(a.data))
         sanity_check(edges, nodes, tx)
         if a.validate_output is not None:
@@ -220,10 +224,13 @@ def main():
             return
         G = build_graph(edges, nodes)
         df = basic_features(G, nodes)
-        write_templates(df, Path(a.out))
-        write_graph_json(G, df, Path(a.out) / "graph.json")
-        hints(G, df)
-    except (ValueError, OSError, KeyError, pd.errors.ParserError) as exc:
+        roles, clusters, top = analyze(G, df, edges, tx)
+        write_outputs(roles, clusters, top, nodes, edges, Path(a.out), graph=G)
+        print(f"Клиентов: {len(roles)}; кластеров: {len(clusters)}; в топе: {len(top)}")
+        print(f"Роли: {roles.role.value_counts().to_dict()}")
+        print(f"Посредничество: {roles.betweenness_mode.iloc[0]}, источников={roles.betweenness_sources.iloc[0]}")
+        print(f"Полный пересчёт: {perf_counter() - started:.2f} с")
+    except (ValueError, OSError, KeyError, pd.errors.ParserError, nx.NetworkXException) as exc:
         ap.exit(1, f"Ошибка проверки или чтения: {exc}\n")
 
 
