@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#12231f">
+  <title>Граф денег — приоритеты и связи</title>
+  <style>__GRAPH_STYLE__</style>
+</head>
+<body>
+<div class="app">
+  <aside class="rail" aria-label="Граф денег">
+    <div class="brand-mark"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M8 9L24 7L17 25Z" fill="none" stroke="currentColor" stroke-width="2"/><g fill="currentColor"><circle cx="8" cy="9" r="3"/><circle cx="24" cy="7" r="3"/><circle cx="17" cy="25" r="3"/></g></svg></div>
+    <div class="rail-divider"></div><div class="rail-label">HACKALEM AI · FREEDOM</div><div class="rail-bottom">AI</div>
+  </aside>
+  <main class="workspace">
+    <header class="topbar"><div class="identity"><strong>Граф денег</strong><span>Рабочее место аналитика</span></div><div class="top-right"><span class="demo-badge">ДАННЫЕ КЕЙСА</span><button id="aboutButton" class="quiet-button" type="button">Как это работает</button></div></header>
+    <div class="body">
+      <div class="heading"><div><div class="breadcrumb">Расследования <span>/</span> Транзакционная сеть</div><h1>Кого проверить первым</h1></div><div class="period" id="period"></div></div>
+      <div class="notice"><span id="sourceNote"></span> Роли — гипотезы. Приоритет проверки не означает вероятность нарушения.</div>
+      <section class="summary" aria-label="Сводка данных">
+        <div class="summary-item"><strong id="totalNodes"></strong><span>клиентов</span></div><div class="summary-separator"></div>
+        <div class="summary-item"><strong id="totalEdges"></strong><span>связей</span></div><div class="summary-separator"></div>
+        <div class="summary-item"><strong id="totalClusters"></strong><span>кластеров</span></div><div class="summary-item"><strong id="totalTurnover"></strong><span>₸ переводов</span></div>
+        <span class="local">● Локально, без отправки данных</span>
+      </section>
+      <section class="toolbar" aria-label="Поиск и фильтры">
+        <label class="search"><span class="sr">Поиск по полному gid или его части среди всех клиентов</span><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="5"/><path d="M12 12l5 5"/></svg><input id="searchInput" type="search" placeholder="Поиск по gid среди всех клиентов" inputmode="numeric" autocomplete="off"><button class="clear-search" id="clearSearch" type="button" aria-label="Очистить поиск" hidden>×</button></label>
+        <select class="filter" id="clusterFilter" aria-label="Кластер списка"><option value="all">Все кластеры</option></select>
+        <select class="filter" id="roleFilter" aria-label="Роль списка"><option value="all">Все роли</option></select>
+        <button class="reset" id="resetButton" type="button">Сбросить</button>
+      </section>
+      <div class="content">
+        <section class="panel priority-panel" aria-label="Приоритетные клиенты">
+          <div class="panel-heading"><h2 id="listTitle">Приоритетные клиенты</h2><span id="resultCount" class="count"></span><select id="listMode" class="list-select" aria-label="Состав списка"><option value="top">Топ клиентов</option><option value="all">Все клиенты</option></select></div>
+          <div class="subheading"><span>МЕСТО / КЛИЕНТ</span><span>ПРИОРИТЕТ</span></div>
+          <div id="priorityList" class="priority-list"></div><div class="list-footer" id="listFooter"></div>
+        </section>
+        <section class="panel graph-panel" aria-label="Направленный граф переводов">
+          <div class="panel-heading graph-header"><h2>Связи выбранного клиента</h2><select class="color-select" id="colorMode" aria-label="Цвет узлов"><option value="role">Цвет: роль</option><option value="cluster">Цвет: кластер</option></select></div>
+          <div class="graph-surface" id="graphSurface"><div class="graph-context" id="graphContext"></div><svg id="network" aria-label="Граф связей"></svg><div id="graphEmpty" class="graph-empty" hidden><p>Клиенты не найдены. Измените поиск или фильтры.</p></div><div id="graphTooltip" class="graph-tooltip" hidden></div><div id="graphHint" class="graph-hint"></div><div class="graph-actions"><button id="zoomOut" type="button" aria-label="Уменьшить граф">−</button><button id="zoomReset" type="button" aria-label="Сбросить масштаб">↺</button><button id="zoomIn" type="button" aria-label="Увеличить граф">+</button></div></div>
+          <div class="graph-pagination"><button id="previousPage" type="button">← Назад</button><span id="pageStatus"></span><button id="nextPage" type="button">Далее →</button></div>
+          <div class="graph-legend-note">Стрелка: отправитель → получатель. Слева — отправители, справа — получатели. Двусторонние связи показаны слева. S — исходный клиент.</div>
+          <div class="legend" id="legend"></div>
+          <div class="edge-table-wrap"><table class="edge-table"><thead><tr><th>Направление / контрагент</th><th>Операций</th><th>Сумма, ₸</th></tr></thead><tbody id="edgeTable"></tbody></table></div>
+        </section>
+        <section class="panel inspector" aria-label="Карточка клиента"><div class="panel-heading">Карточка клиента</div><div id="inspector"></div></section>
+      </div>
+      <footer class="footer"><div class="scenarios"><span>Примеры:</span><button type="button" class="scenario" data-scenario="priority">Первый в топе</button><button type="button" class="scenario" data-scenario="boundary">Граница 4-го колена</button><button type="button" class="scenario" data-scenario="isolated">Без связей</button></div><span class="footer-note">Фильтры меняют список. Граф сохраняет связи с другими кластерами.</span></footer>
+    </div>
+  </main>
+</div>
+<dialog id="aboutDialog" class="dialog"><button id="closeAbout" type="button" class="dialog-close" aria-label="Закрыть">×</button><h2>Как читать результат</h2>
+  <p>Выберите клиента в топе или найдите его по полному gid. На графе показаны его прямые связи. Нажмите на соседний узел, чтобы продолжить исследование цепочки.</p>
+  <p>Если контрагентов много, используйте страницы: по 10 на экране, в порядке суммы переводов с выбранным клиентом. Таблица под графом показывает суммы и направления той же страницы. Поиск охватывает всех клиентов, включая клиентов вне топа и без связей.</p>
+  <p id="methodNote"></p><p>Оценка роли и приоритет — разные величины от 0 до 1. Это не вероятности преступления. Выгрузка ограничена четырьмя коленами, периодом, внутрибанковскими переводами и порогом суммы. Отсутствие исходящих на границе не доказывает, что средства остались у клиента.</p>
+  <div class="dialog-actions"><button id="downloadTop" type="button" class="quiet-button">Скачать топ CSV</button><button id="closeAboutPrimary" type="button" class="solid-button">Понятно</button></div>
+</dialog>
+<div id="announcer" class="live-region" aria-live="polite"></div>
+<script id="graph-data" type="application/json">__GRAPH_DATA__</script>
+<script>__GRAPH_SCRIPT__</script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+# Tested alternative environment for the interface: Python 3.12.
+# Existing starter/requirements.txt remains available for the team's Python 3.14.
+numpy==1.26.4
+pandas==2.2.3
+scipy==1.13.1
+pyarrow==25.0.1
+networkx==3.7
+python-dateutil==2.9.0.post0
+six==1.17.0
+pytz==2026.3.post1
+tzdata==2026.3
