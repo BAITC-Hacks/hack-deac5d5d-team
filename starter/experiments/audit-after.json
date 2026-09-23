@@ -1,0 +1,120 @@
+{
+  "threshold_float": {
+    "passed": true,
+    "expected_role_by_documented_rule": "consolidator",
+    "actual_role": "consolidator",
+    "exact_in_tiyn": 1500100,
+    "exact_out_tiyn": 525035,
+    "boundary_comparison": "20 * 525035 == 7 * 1500100",
+    "evidence": "Гипотеза сбора: входов=3; вход=15001.00 KZT; выход/вход=0.350; крупнейший вход=33%"
+  },
+  "incorrect_depth_accepted": {
+    "passed": true,
+    "gid": "100000003684369104",
+    "true_shortest_depth": 2,
+    "attempted_depth": 4,
+    "rejected": true,
+    "error": "nodes.depth: shortest directed distance from seeds mismatch (maximum 4): [{'gid': 100000003684369104, 'declared': 4, 'actual': 2}]"
+  },
+  "input_output_collision": {
+    "passed": true,
+    "cases": {
+      "same": {
+        "passed": true,
+        "exit_code": 1,
+        "error": "Ошибка данных или публикации: Unsafe paths: output and input directories overlap",
+        "input_is_symlink": false,
+        "input_sha256_unchanged": true,
+        "input_sha256": {
+          "edges.parquet": "9109436bffd2e221c252d12231e4d2f2815d6d68c454647f8dffbf382f648d3a",
+          "nodes.parquet": "ab0b02ad174e8544ac71facddaadaba9c36dca1cd8c730d9096a0715dc1da17f",
+          "transactions.parquet": "683614833e8d61420e1e52e096a244cc094188d874b54c71ac1d34f114466aff"
+        }
+      },
+      "ancestor": {
+        "passed": true,
+        "exit_code": 1,
+        "error": "Ошибка данных или публикации: Unsafe paths: output and input directories overlap",
+        "input_is_symlink": false,
+        "input_sha256_unchanged": true,
+        "input_sha256": {
+          "edges.parquet": "9109436bffd2e221c252d12231e4d2f2815d6d68c454647f8dffbf382f648d3a",
+          "nodes.parquet": "ab0b02ad174e8544ac71facddaadaba9c36dca1cd8c730d9096a0715dc1da17f",
+          "transactions.parquet": "683614833e8d61420e1e52e096a244cc094188d874b54c71ac1d34f114466aff"
+        }
+      },
+      "symlink_alias": {
+        "passed": true,
+        "exit_code": 1,
+        "error": "Ошибка данных или публикации: Unsafe paths: output and input directories overlap",
+        "input_is_symlink": false,
+        "input_sha256_unchanged": true,
+        "input_sha256": {
+          "edges.parquet": "9109436bffd2e221c252d12231e4d2f2815d6d68c454647f8dffbf382f648d3a",
+          "nodes.parquet": "ab0b02ad174e8544ac71facddaadaba9c36dca1cd8c730d9096a0715dc1da17f",
+          "transactions.parquet": "683614833e8d61420e1e52e096a244cc094188d874b54c71ac1d34f114466aff"
+        }
+      }
+    }
+  },
+  "json_not_validated": {
+    "passed": true,
+    "inconsistent_input_graph": {
+      "rejected": true,
+      "error": "graph: nodes disagree with input nodes"
+    },
+    "inconsistent_serialized_json": {
+      "rejected": true,
+      "error": "graph.json: unknown edge endpoint"
+    },
+    "any_invalid_result_published": false
+  },
+  "legacy_reader_race": {
+    "passed": true,
+    "migration_occurred_between_csv_reads": true,
+    "legacy_became_version_pointer": true,
+    "reader_received_complete_old_generation": true,
+    "subsequent_reader_received_new_generation": true,
+    "old_and_new_manifest_differ": true
+  },
+  "self_transfer_priority": {
+    "passed": true,
+    "gid": "100000003684369100",
+    "n_peers": 0,
+    "priority_score": 0.0,
+    "external_turnover_tiyn": 0,
+    "self_transfer_tiyn": 100000000,
+    "role": "peripheral"
+  },
+  "disconnected_communities": {
+    "passed": true,
+    "nodes": 2248,
+    "clusters": 89,
+    "expected_clusters": 89,
+    "disconnected": [],
+    "actual_input_sha256_unchanged": true,
+    "input_sha256": {
+      "edges.parquet": "4e71dde5cd3115bcb26e91202665532ee6581cf8233a9fc8059ea59fb7358a38",
+      "nodes.parquet": "d2a45b0df6e9352832d5fb09839d10b9e23f898156c3bab263b051b31cc0296d",
+      "transactions.parquet": "c30c5317b5439591dde86f2058dc47a3d19b2900c055ded994fe547f6fb7e7da"
+    }
+  },
+  "all_passed": true,
+  "source_sha256": {
+    "analysis.py": "536eaa2b00d025d64024b25fdc33c2ad90eafa0bc5b293fbcc100d59ec538060",
+    "cli.py": "db1a8402faf4716b115b403659032b2ed00186324eda0e3a3e291614f8f34050",
+    "communities.py": "3201acd6b9c357fe281297ee63d1a2cc00c14c841c2483cf396a2a1825a0fd59",
+    "contracts.py": "465cb4bf0fde4078ce3418189b7443a95a3d68e8960e6c9111555c7f8ec91d75",
+    "features.py": "a78db5c2557c37334cdc7bc19393e0d58072e319c0e8480977bee1ac8cbe7056",
+    "input_contracts.py": "89c503c2709168665f0faeb0980aa9db598cfbecf752d5242733c1b47955f77b",
+    "output_store.py": "ac8ed845029ccc042e0ce974c0496925781563592b74de32a0aea88526f9b96e",
+    "pipeline.py": "d05be3b5e680cb1fa6c22764afaae25dfd094e15f7e1d9d4e6bfc3b265ab436a",
+    "ranking.py": "65e41675f4404f83ee5d3ef5266d31dba7d826cf7c20ad15e83cc4c0183cdfb3",
+    "rules.py": "bed1cdc48bd2677f6acdf069f4429f1edee5e16593cbbc778d4f61fd0d93ea52",
+    "starter.py": "8bd3aea16f3189a3ad3f2e186fb65112433b849a74fb09db0b670bb007ea1bd3",
+    "storage.py": "f1772ec3b0abacfdc32cf91e3b6927b661856e53b96f203129a2e7f5649a0899",
+    "teaching.py": "908d625f1ca2b068f263fc42f3a2eec85927511f32289f7ceaf5a8b54adef1dc",
+    "temporal.py": "a8823dfa189b10533b18cc6bc6bbf1fe811edd028cfd41e93950b7d053a3451e",
+    "validation.py": "dc31a63121286bf5772a5396854d97c70cfbd36665551e17539212acb1c4b2a8"
+  }
+}
